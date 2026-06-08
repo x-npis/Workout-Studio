@@ -44,6 +44,26 @@ class ExerciseRepository(context: Context) {
         persist(_exercises.value.filterNot { it.id == id })
     }
 
+    fun duplicate(id: Long) {
+        val list = _exercises.value
+        val index = list.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val source = list[index]
+        val newId = (list.maxOfOrNull { it.id } ?: 0L) + 1L
+        val copy = source.copy(id = newId, name = "${source.name} (копия)")
+        persist(list.toMutableList().apply { add(index + 1, copy) })
+    }
+
+    fun move(id: Long, up: Boolean) {
+        val list = _exercises.value.toMutableList()
+        val index = list.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val target = if (up) index - 1 else index + 1
+        if (target < 0 || target >= list.size) return
+        list[index] = list[target].also { list[target] = list[index] }
+        persist(list)
+    }
+
     fun get(id: Long): Exercise? = _exercises.value.firstOrNull { it.id == id }
 
     private fun defaults(): List<Exercise> = listOf(

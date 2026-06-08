@@ -60,13 +60,13 @@ object RestNotifications {
             .build()
     }
 
-    fun showDone(context: Context, exerciseName: String, set: Int, total: Int) {
+    fun showDone(context: Context, title: String, text: String) {
         ensureChannel(context)
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_timer)
-            .setContentTitle("Отдых окончен")
-            .setContentText("$exerciseName · можно начинать подход $set/$total")
+            .setContentTitle(title)
+            .setContentText(text)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
             .setSilent(true)

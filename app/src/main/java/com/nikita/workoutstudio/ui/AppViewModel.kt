@@ -24,6 +24,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteExercise(id: Long) = exerciseRepo.delete(id)
 
+    fun duplicateExercise(id: Long) = exerciseRepo.duplicate(id)
+
+    fun moveUp(id: Long) = exerciseRepo.move(id, up = true)
+
+    fun moveDown(id: Long) = exerciseRepo.move(id, up = false)
+
     fun getExercise(id: Long): Exercise? = exerciseRepo.get(id)
 
     fun updateSettings(newSettings: TimerSettings) {
@@ -31,8 +37,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RestTimerController.updateSettings(newSettings)
     }
 
-    fun openTimer(exercise: Exercise) =
-        RestTimerController.prepare(exercise, settingsRepo.current())
+    /** Run just this one exercise. */
+    fun startSingle(exercise: Exercise) =
+        RestTimerController.startSingle(exercise, settingsRepo.current())
+
+    /** Run the whole workout starting from the given exercise to the end of the list. */
+    fun startWorkoutFrom(exercise: Exercise) {
+        val all = exercises.value
+        val start = all.indexOfFirst { it.id == exercise.id }
+        if (start < 0) return
+        RestTimerController.startSession(all.subList(start, all.size), settingsRepo.current())
+    }
 
     fun startRest() = RestTimerController.startRest()
     fun addRestSeconds(extra: Int) = RestTimerController.addSeconds(extra)

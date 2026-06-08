@@ -7,6 +7,7 @@ import android.os.SystemClock
 import com.nikita.workoutstudio.model.Exercise
 import com.nikita.workoutstudio.model.TimerSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
 
 object RestTimerController {
 
@@ -22,13 +22,17 @@ object RestTimerController {
 
     data class State(
         val phase: Phase = Phase.IDLE,
-        val exerciseId: Long = -1L,
         val exerciseName: String = "",
         val reps: Int = 0,
         val currentSet: Int = 1,
         val totalSets: Int = 3,
         val restSeconds: Int = 0,
-        val remainingSeconds: Int = 0
+        val remainingSeconds: Int = 0,
+        // Chain progress (1-based index of the current exercise within the session).
+        val exerciseIndex: Int = 1,
+        val exerciseCount: Int = 1,
+        // Name of the exercise that comes after the current one finishes, if any.
+        val nextExerciseName: String? = null
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -37,6 +41,10 @@ object RestTimerController {
 
     private lateinit var appContext: Context
     private var settings: TimerSettings = TimerSettings()
+
+    // The session queue and our position in it.
+    private var queue: List<Exercise> = emptyList()
+    private var index: Int = 0
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -49,28 +57,26 @@ object RestTimerController {
         settings = newSettings
     }
 
-    /** Open the timer for an exercise, positioned at the first set, no rest running yet. */
-    fun prepare(exercise: Exercise, currentSettings: TimerSettings) {
+    /** Start a session with a single exercise. */
+    fun startSingle(exercise: Exercise, currentSettings: TimerSettings) {
+        startSession(listOf(exercise), currentSettings)
+    }
+
+    /** Start a chained session over several exercises, run back to back. */
+    fun startSession(exercises: List<Exercise>, currentSettings: TimerSettings) {
+        if (exercises.isEmpty()) return
         settings = currentSettings
         cancelTick()
         RestNotifications.cancelAll(appContext)
-        _state.value = State(
-            phase = Phase.READY,
-            exerciseId = exercise.id,
-            exerciseName = exercise.name,
-            reps = exercise.reps,
-            currentSet = 1,
-            totalSets = exercise.sets.coerceAtLeast(1),
-            restSeconds = exercise.restSeconds,
-            remainingSeconds = exercise.restSeconds
-        )
+        queue = exercises
+        index = 0
+        emitReady(firstSet = true)
     }
 
     /** User finished the current set — start the rest countdown. */
     fun startRest() {
-        val s = _state.value
-        if (s.phase != Phase.READY) return
-        beginCountdown(s.restSeconds)
+        if (_state.value.phase != Phase.READY) return
+        beginCountdown(_state.value.restSeconds)
     }
 
     fun addSeconds(extra: Int) {
@@ -81,7 +87,7 @@ object RestTimerController {
         pushOngoingNotification()
     }
 
-    /** Skip the rest right now and advance to the next set (no alert). */
+    /** Skip the rest right now and advance (no alert). */
     fun skip() {
         if (_state.value.phase != Phase.RESTING) return
         cancelTick()
@@ -93,7 +99,26 @@ object RestTimerController {
         cancelTick()
         stopService()
         RestNotifications.cancelAll(appContext)
+        queue = emptyList()
+        index = 0
         _state.value = State(phase = Phase.IDLE)
+    }
+
+    private fun emitReady(firstSet: Boolean) {
+        val current = queue[index]
+        val prevSet = if (firstSet) 1 else _state.value.currentSet
+        _state.value = State(
+            phase = Phase.READY,
+            exerciseName = current.name,
+            reps = current.reps,
+            currentSet = prevSet,
+            totalSets = current.sets.coerceAtLeast(1),
+            restSeconds = current.restSeconds,
+            remainingSeconds = current.restSeconds,
+            exerciseIndex = index + 1,
+            exerciseCount = queue.size,
+            nextExerciseName = queue.getOrNull(index + 1)?.name
+        )
     }
 
     private fun beginCountdown(seconds: Int) {
@@ -121,29 +146,49 @@ object RestTimerController {
 
     private fun onRestFinished() {
         Signaler.fire(appContext, sound = settings.sound, vibrate = settings.vibrate)
-        val s = _state.value
-        val nextSet = s.currentSet + 1
         if (settings.runInBackground) {
-            RestNotifications.showDone(
-                appContext, s.exerciseName,
-                set = nextSet.coerceAtMost(s.totalSets), total = s.totalSets
-            )
+            val (title, text) = doneMessage()
+            RestNotifications.showDone(appContext, title, text)
         }
         advanceAfterRest(signal = true)
     }
 
-    private fun advanceAfterRest(signal: Boolean) {
+    /** Compute the post-rest target without mutating state, for the notification text. */
+    private fun doneMessage(): Pair<String, String> {
         val s = _state.value
+        return when {
+            s.currentSet < s.totalSets ->
+                "Отдых окончен" to "${s.exerciseName} · подход ${s.currentSet + 1}/${s.totalSets}"
+            index < queue.size - 1 -> {
+                val next = queue[index + 1]
+                "Отдых окончен" to "Далее: ${next.name} · подход 1/${next.sets.coerceAtLeast(1)}"
+            }
+            else -> "Тренировка завершена" to "Все упражнения выполнены"
+        }
+    }
+
+    private fun advanceAfterRest(signal: Boolean) {
         stopService()
         RestNotifications.cancelAll(appContext)
-        if (s.currentSet >= s.totalSets) {
-            _state.value = s.copy(phase = Phase.DONE, remainingSeconds = 0)
-        } else {
-            _state.value = s.copy(
-                phase = Phase.READY,
-                currentSet = s.currentSet + 1,
-                remainingSeconds = s.restSeconds
-            )
+        val s = _state.value
+        when {
+            // More sets of the current exercise.
+            s.currentSet < s.totalSets -> {
+                _state.value = s.copy(
+                    phase = Phase.READY,
+                    currentSet = s.currentSet + 1,
+                    remainingSeconds = s.restSeconds
+                )
+            }
+            // Move on to the next exercise in the chain.
+            index < queue.size - 1 -> {
+                index += 1
+                emitReady(firstSet = true)
+            }
+            // Whole session finished.
+            else -> {
+                _state.value = s.copy(phase = Phase.DONE, remainingSeconds = 0)
+            }
         }
     }
 

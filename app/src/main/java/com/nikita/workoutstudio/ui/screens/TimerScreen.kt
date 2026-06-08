@@ -70,6 +70,14 @@ fun TimerScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
+                if (state.exerciseCount > 1) {
+                    Text(
+                        "Упражнение ${state.exerciseIndex}/${state.exerciseCount}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
                 Text(
                     state.exerciseName,
                     fontSize = 24.sp,
@@ -90,8 +98,26 @@ fun TimerScreen(
         Spacer(Modifier.weight(1f))
 
         when (state.phase) {
-            RestTimerController.Phase.DONE -> DoneContent(scheme.onBackground)
+            RestTimerController.Phase.DONE -> DoneContent(
+                textColor = scheme.onBackground,
+                wholeWorkout = state.exerciseCount > 1
+            )
             else -> CountdownContent(state = state)
+        }
+
+        // "Next up" hint only matters while resting on the last set of an exercise
+        // that has a follow-up in the chain.
+        if (state.phase == RestTimerController.Phase.RESTING &&
+            state.currentSet >= state.totalSets &&
+            state.nextExerciseName != null
+        ) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Далее: ${state.nextExerciseName}",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = scheme.onSurfaceVariant
+            )
         }
 
         Spacer(Modifier.weight(1f))
@@ -172,12 +198,12 @@ private fun CountdownContent(state: RestTimerController.State) {
 }
 
 @Composable
-private fun DoneContent(textColor: Color) {
+private fun DoneContent(textColor: Color, wholeWorkout: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Готово!", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = textColor)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Все подходы выполнены",
+            if (wholeWorkout) "Тренировка завершена" else "Все подходы выполнены",
             fontSize = 16.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
