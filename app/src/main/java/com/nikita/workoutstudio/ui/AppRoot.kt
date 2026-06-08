@@ -3,6 +3,7 @@ package com.nikita.workoutstudio.ui
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -22,10 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nikita.workoutstudio.timer.RestTimerController
 import com.nikita.workoutstudio.ui.screens.ExercisesScreen
+import com.nikita.workoutstudio.ui.screens.ReportsScreen
 import com.nikita.workoutstudio.ui.screens.SettingsScreen
 import com.nikita.workoutstudio.ui.screens.TimerScreen
 
-private enum class Tab { Exercises, Settings }
+private enum class Tab { Exercises, Reports, Settings }
 
 @Composable
 fun AppRoot(vm: AppViewModel = viewModel()) {
@@ -50,6 +52,13 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                     colors = navColors()
                 )
                 NavigationBarItem(
+                    selected = tab == Tab.Reports,
+                    onClick = { tab = Tab.Reports },
+                    icon = { Icon(Icons.Outlined.Assessment, contentDescription = null) },
+                    label = { Text("Отчёты") },
+                    colors = navColors()
+                )
+                NavigationBarItem(
                     selected = tab == Tab.Settings,
                     onClick = { tab = Tab.Settings },
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
@@ -61,6 +70,10 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
     ) { padding ->
         when (tab) {
             Tab.Exercises -> ExercisesScreen(
+                vm = vm,
+                modifier = Modifier.fillMaxSize().padding(padding)
+            )
+            Tab.Reports -> ReportsScreen(
                 vm = vm,
                 modifier = Modifier.fillMaxSize().padding(padding)
             )

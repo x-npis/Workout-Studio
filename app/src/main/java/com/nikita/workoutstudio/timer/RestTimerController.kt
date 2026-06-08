@@ -4,8 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import com.nikita.workoutstudio.data.ReportRepository
 import com.nikita.workoutstudio.model.Exercise
+import com.nikita.workoutstudio.model.ExerciseReport
+import com.nikita.workoutstudio.model.SetEntry
 import com.nikita.workoutstudio.model.TimerSettings
+import com.nikita.workoutstudio.model.WorkoutReport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,16 +45,26 @@ object RestTimerController {
 
     private lateinit var appContext: Context
     private var settings: TimerSettings = TimerSettings()
+    private var reportRepository: ReportRepository? = null
 
     // The session queue and our position in it.
     private var queue: List<Exercise> = emptyList()
     private var index: Int = 0
+
+    // Report accumulation for the current session.
+    private var sessionStartedAt: Long = 0L
+    private val setLog = mutableMapOf<Int, MutableList<SetEntry>>()
+    private var reportSaved = false
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
     fun init(context: Context) {
         appContext = context.applicationContext
+    }
+
+    fun attachReportRepository(repo: ReportRepository) {
+        reportRepository = repo
     }
 
     fun updateSettings(newSettings: TimerSettings) {
@@ -67,15 +81,25 @@ object RestTimerController {
         if (exercises.isEmpty()) return
         settings = currentSettings
         cancelTick()
+        AlarmPlayer.stop()
         RestNotifications.cancelAll(appContext)
         queue = exercises
         index = 0
+        setLog.clear()
+        sessionStartedAt = System.currentTimeMillis()
+        reportSaved = false
         emitReady(firstSet = true)
     }
 
-    /** User finished the current set — start the rest countdown. */
-    fun startRest() {
+    /**
+     * User finished the current set with [actualReps] reps done — log it and
+     * start the rest countdown.
+     */
+    fun startRest(actualReps: Int) {
         if (_state.value.phase != Phase.READY) return
+        AlarmPlayer.stop()
+        RestNotifications.cancelAlarm(appContext)
+        logSet(actualReps)
         beginCountdown(_state.value.restSeconds)
     }
 
@@ -90,18 +114,36 @@ object RestTimerController {
     /** Skip the rest right now and advance (no alert). */
     fun skip() {
         if (_state.value.phase != Phase.RESTING) return
+        AlarmPlayer.stop()
+        RestNotifications.cancelAlarm(appContext)
         cancelTick()
-        advanceAfterRest(signal = false)
+        advanceAfterRest()
     }
 
-    /** Abort the whole session. */
+    /** Stop the alarm sound without changing the workout state. */
+    fun stopAlarm() {
+        AlarmPlayer.stop()
+        RestNotifications.cancelAlarm(appContext)
+    }
+
+    /** Abort the whole session (saves whatever was logged so far). */
     fun cancel() {
         cancelTick()
+        AlarmPlayer.stop()
         stopService()
         RestNotifications.cancelAll(appContext)
+        saveReport()
         queue = emptyList()
         index = 0
+        setLog.clear()
         _state.value = State(phase = Phase.IDLE)
+    }
+
+    private fun logSet(actualReps: Int) {
+        val s = _state.value
+        val target = queue.getOrNull(index)?.reps ?: s.reps
+        val list = setLog.getOrPut(index) { mutableListOf() }
+        list.add(SetEntry(actualReps = actualReps.coerceAtLeast(0), targetReps = target))
     }
 
     private fun emitReady(firstSet: Boolean) {
@@ -145,12 +187,16 @@ object RestTimerController {
     }
 
     private fun onRestFinished() {
-        Signaler.fire(appContext, sound = settings.sound, vibrate = settings.vibrate)
+        stopService()
+        RestNotifications.cancelOngoing(appContext)
+        // Alarm-stream sound + vibration: rings even when the phone is on mute.
+        AlarmPlayer.start(appContext, sound = settings.sound, vibrate = settings.vibrate)
+        val (title, text) = doneMessage()
+        // Alarm-style panel so it surfaces over other apps / the lock screen.
         if (settings.runInBackground) {
-            val (title, text) = doneMessage()
-            RestNotifications.showDone(appContext, title, text)
+            RestNotifications.showAlarm(appContext, title, text)
         }
-        advanceAfterRest(signal = true)
+        advanceAfterRest()
     }
 
     /** Compute the post-rest target without mutating state, for the notification text. */
@@ -167,9 +213,9 @@ object RestTimerController {
         }
     }
 
-    private fun advanceAfterRest(signal: Boolean) {
+    private fun advanceAfterRest() {
         stopService()
-        RestNotifications.cancelAll(appContext)
+        RestNotifications.cancelOngoing(appContext)
         val s = _state.value
         when {
             // More sets of the current exercise.
@@ -187,9 +233,36 @@ object RestTimerController {
             }
             // Whole session finished.
             else -> {
+                saveReport()
                 _state.value = s.copy(phase = Phase.DONE, remainingSeconds = 0)
             }
         }
+    }
+
+    private fun saveReport() {
+        if (reportSaved) return
+        val repo = reportRepository ?: return
+        val exercises = queue.mapIndexedNotNull { i, ex ->
+            val sets = setLog[i]
+            if (sets.isNullOrEmpty()) null
+            else ExerciseReport(
+                name = ex.name,
+                restSeconds = ex.restSeconds,
+                targetReps = ex.reps,
+                plannedSets = ex.sets.coerceAtLeast(1),
+                sets = sets.toList()
+            )
+        }
+        if (exercises.isEmpty()) return
+        repo.add(
+            WorkoutReport(
+                id = sessionStartedAt,
+                startedAt = sessionStartedAt,
+                finishedAt = System.currentTimeMillis(),
+                exercises = exercises
+            )
+        )
+        reportSaved = true
     }
 
     private fun pushOngoingNotification() {

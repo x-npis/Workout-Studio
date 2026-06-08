@@ -79,7 +79,7 @@ fun SettingsScreen(vm: AppViewModel, modifier: Modifier = Modifier) {
         }
 
         Text(
-            "Workout Studio · версия 1.1",
+            "Workout Studio · версия 1.2",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp)

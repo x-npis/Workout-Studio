@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import com.nikita.workoutstudio.timer.RestTimerController
 import com.nikita.workoutstudio.ui.AppRoot
 import com.nikita.workoutstudio.ui.theme.WorkoutStudioTheme
 
@@ -26,6 +27,12 @@ class MainActivity : ComponentActivity() {
                 AppRoot()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Opening the app (incl. tapping the alarm notification) silences the alarm.
+        RestTimerController.stopAlarm()
     }
 
     private fun maybeRequestNotificationPermission() {

@@ -23,6 +23,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -30,6 +33,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
@@ -218,23 +222,7 @@ private fun Controls(
 ) {
     val scheme = MaterialTheme.colorScheme
     when (state.phase) {
-        RestTimerController.Phase.READY -> {
-            Button(
-                onClick = { vm.startRest() },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primary,
-                    contentColor = scheme.onPrimary
-                )
-            ) {
-                Text(
-                    "Подход ${state.currentSet} сделан — начать отдых",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
+        RestTimerController.Phase.READY -> ReadyControls(vm = vm, state = state)
         RestTimerController.Phase.RESTING -> {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -267,6 +255,75 @@ private fun Controls(
             ) { Text("Завершить", fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
         }
         else -> {}
+    }
+}
+
+@Composable
+private fun ReadyControls(vm: AppViewModel, state: RestTimerController.State) {
+    val scheme = MaterialTheme.colorScheme
+    // Default the rep count to the planned target; the user nudges it if they did fewer/more.
+    var actual by remember(state.exerciseName, state.currentSet) { mutableStateOf(state.reps) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(
+            "Сколько повторений сделал?",
+            fontSize = 14.sp,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            StepperButton("–", onClick = { if (actual > 0) actual-- })
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "$actual",
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onBackground
+                )
+                Text(
+                    "цель: ${state.reps}",
+                    fontSize = 13.sp,
+                    color = scheme.onSurfaceVariant
+                )
+            }
+            StepperButton("+", onClick = { actual++ })
+        }
+        Button(
+            onClick = { vm.startRest(actual) },
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = scheme.primary,
+                contentColor = scheme.onPrimary
+            )
+        ) {
+            Text(
+                "Готово — начать отдых",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun StepperButton(label: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.size(64.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+    ) {
+        Text(label, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = scheme.onSurface)
     }
 }
 

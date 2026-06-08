@@ -14,23 +14,44 @@ import com.nikita.workoutstudio.R
 object RestNotifications {
 
     const val CHANNEL_ID = "rest_timer"
+    const val ALARM_CHANNEL_ID = "rest_alarm"
     const val ONGOING_ID = 1001
-    const val DONE_ID = 1002
+    const val ALARM_ID = 1003
 
-    fun ensureChannel(context: Context) {
+    fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.rest_channel_name),
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = context.getString(R.string.rest_channel_desc)
-            enableVibration(false)
-            setSound(null, null)
+
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            val ongoing = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.rest_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = context.getString(R.string.rest_channel_desc)
+                enableVibration(false)
+                setSound(null, null)
+            }
+            manager.createNotificationChannel(ongoing)
         }
-        manager.createNotificationChannel(channel)
+
+        if (manager.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
+            // No channel sound/vibration here: AlarmPlayer owns the alarm-stream
+            // audio so it works even in mute mode. Channel stays silent to avoid
+            // a doubled notification beep.
+            val alarm = NotificationChannel(
+                ALARM_CHANNEL_ID,
+                context.getString(R.string.alarm_channel_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = context.getString(R.string.alarm_channel_desc)
+                enableVibration(false)
+                setSound(null, null)
+                setBypassDnd(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            manager.createNotificationChannel(alarm)
+        }
     }
 
     private fun contentIntent(context: Context): PendingIntent {
@@ -43,8 +64,18 @@ object RestNotifications {
         )
     }
 
+    private fun stopAlarmIntent(context: Context): PendingIntent {
+        val intent = Intent(context, AlarmActionReceiver::class.java).apply {
+            action = AlarmActionReceiver.ACTION_STOP_ALARM
+        }
+        return PendingIntent.getBroadcast(
+            context, 1, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     fun buildOngoing(context: Context, exerciseName: String, remaining: Int, set: Int, total: Int): Notification {
-        ensureChannel(context)
+        ensureChannels(context)
         val mm = remaining / 60
         val ss = remaining % 60
         val time = "%d:%02d".format(mm, ss)
@@ -60,26 +91,41 @@ object RestNotifications {
             .build()
     }
 
-    fun showDone(context: Context, title: String, text: String) {
-        ensureChannel(context)
+    /**
+     * Alarm-style heads-up / full-screen notification shown when rest ends.
+     * Tapping it opens the app; the Stop action silences the AlarmPlayer.
+     */
+    fun showAlarm(context: Context, title: String, text: String) {
+        ensureChannels(context)
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
-            .setOnlyAlertOnce(false)
-            .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentIntent(context))
+            .setFullScreenIntent(contentIntent(context), true)
+            .addAction(0, "Остановить", stopAlarmIntent(context))
             .build()
-        manager.notify(DONE_ID, notification)
+        manager.notify(ALARM_ID, notification)
+    }
+
+    fun cancelOngoing(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.cancel(ONGOING_ID)
+    }
+
+    fun cancelAlarm(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.cancel(ALARM_ID)
     }
 
     fun cancelAll(context: Context) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.cancel(ONGOING_ID)
-        manager.cancel(DONE_ID)
+        cancelOngoing(context)
+        cancelAlarm(context)
     }
 }

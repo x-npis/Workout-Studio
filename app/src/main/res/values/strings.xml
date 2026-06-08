@@ -3,4 +3,6 @@
     <string name="app_name">Workout Studio</string>
     <string name="rest_channel_name">Таймер отдыха</string>
     <string name="rest_channel_desc">Отсчёт времени отдыха между подходами</string>
+    <string name="alarm_channel_name">Сигнал окончания отдыха</string>
+    <string name="alarm_channel_desc">Громкий сигнал, когда отдых закончился</string>
 </resources>

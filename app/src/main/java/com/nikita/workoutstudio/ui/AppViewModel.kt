@@ -12,9 +12,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val application = app as WorkoutApp
     private val exerciseRepo = application.exerciseRepository
     private val settingsRepo = application.settingsRepository
+    private val reportRepo = application.reportRepository
 
     val exercises = exerciseRepo.exercises
     val settings = settingsRepo.settings
+    val reports = reportRepo.reports
     val timerState = RestTimerController.state
 
     fun addExercise(name: String, restSeconds: Int, reps: Int, sets: Int) =
@@ -49,8 +51,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RestTimerController.startSession(all.subList(start, all.size), settingsRepo.current())
     }
 
-    fun startRest() = RestTimerController.startRest()
+    fun startRest(actualReps: Int) = RestTimerController.startRest(actualReps)
     fun addRestSeconds(extra: Int) = RestTimerController.addSeconds(extra)
     fun skipRest() = RestTimerController.skip()
     fun cancelTimer() = RestTimerController.cancel()
+
+    fun deleteReport(id: Long) = reportRepo.delete(id)
 }
