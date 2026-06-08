@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +49,8 @@ import com.nikita.workoutstudio.ui.AppViewModel
 fun TimerScreen(
     vm: AppViewModel,
     state: RestTimerController.State,
-    onClose: () -> Unit
+    onMinimize: () -> Unit,
+    onFinish: () -> Unit
 ) {
     val settings = vm.settings
     // Keep screen on while the timer screen is visible, if enabled in settings.
@@ -58,6 +60,8 @@ fun TimerScreen(
         view.keepScreenOn = keepOn
         onDispose { view.keepScreenOn = false }
     }
+
+    var confirmFinish by remember { mutableStateOf(false) }
 
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -94,7 +98,9 @@ fun TimerScreen(
                     color = scheme.onSurfaceVariant
                 )
             }
-            TextButton(onClick = onClose) { Text("Закрыть") }
+            if (state.phase != RestTimerController.Phase.DONE) {
+                TextButton(onClick = onMinimize) { Text("Свернуть") }
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -125,7 +131,29 @@ fun TimerScreen(
         }
 
         Spacer(Modifier.weight(1f))
-        Controls(vm = vm, state = state, onClose = onClose)
+        Controls(
+            vm = vm,
+            state = state,
+            onRequestFinish = { confirmFinish = true },
+            onFinish = onFinish
+        )
+    }
+
+    if (confirmFinish) {
+        AlertDialog(
+            onDismissRequest = { confirmFinish = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Завершить тренировку?") },
+            text = { Text("Тренировка закончится сейчас, а отчёт о ней сохранится.") },
+            confirmButton = {
+                TextButton(onClick = { confirmFinish = false; onFinish() }) {
+                    Text("Завершить", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmFinish = false }) { Text("Отмена") }
+            }
+        )
     }
 }
 
@@ -218,11 +246,16 @@ private fun DoneContent(textColor: Color, wholeWorkout: Boolean) {
 private fun Controls(
     vm: AppViewModel,
     state: RestTimerController.State,
-    onClose: () -> Unit
+    onRequestFinish: () -> Unit,
+    onFinish: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     when (state.phase) {
-        RestTimerController.Phase.READY -> ReadyControls(vm = vm, state = state)
+        RestTimerController.Phase.READY -> ReadyControls(
+            vm = vm,
+            state = state,
+            onRequestFinish = onRequestFinish
+        )
         RestTimerController.Phase.RESTING -> {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -238,14 +271,14 @@ private fun Controls(
                     ) { Text("Пропустить", fontSize = 16.sp) }
                 }
                 TextButton(
-                    onClick = onClose,
+                    onClick = onRequestFinish,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Отменить тренировку", color = scheme.error) }
+                ) { Text("Завершить тренировку", color = scheme.error) }
             }
         }
         RestTimerController.Phase.DONE -> {
             Button(
-                onClick = onClose,
+                onClick = onFinish,
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -259,10 +292,16 @@ private fun Controls(
 }
 
 @Composable
-private fun ReadyControls(vm: AppViewModel, state: RestTimerController.State) {
+private fun ReadyControls(
+    vm: AppViewModel,
+    state: RestTimerController.State,
+    onRequestFinish: () -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
     // Default the rep count to the planned target; the user nudges it if they did fewer/more.
     var actual by remember(state.exerciseName, state.currentSet) { mutableStateOf(state.reps) }
+    // The last set of the last exercise has no rest afterwards — finish instead.
+    val isFinalSet = state.currentSet >= state.totalSets && state.exerciseIndex >= state.exerciseCount
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(
@@ -306,10 +345,18 @@ private fun ReadyControls(vm: AppViewModel, state: RestTimerController.State) {
             )
         ) {
             Text(
-                "Готово — начать отдых",
+                if (isFinalSet) "Завершить тренировку" else "Готово — начать отдых",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
+        }
+        // On the final set the big button already ends the workout, so the
+        // separate "finish early" action only makes sense before then.
+        if (!isFinalSet) {
+            TextButton(
+                onClick = onRequestFinish,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Завершить тренировку", color = scheme.error) }
         }
     }
 }

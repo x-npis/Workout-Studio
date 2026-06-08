@@ -6,6 +6,9 @@ import com.nikita.workoutstudio.WorkoutApp
 import com.nikita.workoutstudio.model.Exercise
 import com.nikita.workoutstudio.model.TimerSettings
 import com.nikita.workoutstudio.timer.RestTimerController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -18,6 +21,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val settings = settingsRepo.settings
     val reports = reportRepo.reports
     val timerState = RestTimerController.state
+
+    // UI-only: whether the running timer is collapsed to a banner so the user
+    // can browse the rest of the app while the session keeps going underneath.
+    private val _timerMinimized = MutableStateFlow(false)
+    val timerMinimized: StateFlow<Boolean> = _timerMinimized.asStateFlow()
+
+    /** True while a workout session is in progress (READY / RESTING / DONE). */
+    val isSessionActive: Boolean
+        get() = timerState.value.phase != RestTimerController.Phase.IDLE
+
+    fun minimizeTimer() { _timerMinimized.value = true }
+    fun expandTimer() { _timerMinimized.value = false }
 
     fun addExercise(name: String, restSeconds: Int, reps: Int, sets: Int) =
         exerciseRepo.add(name, restSeconds, reps, sets)
@@ -40,21 +55,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Run just this one exercise. */
-    fun startSingle(exercise: Exercise) =
+    fun startSingle(exercise: Exercise) {
+        if (isSessionActive) return
+        _timerMinimized.value = false
         RestTimerController.startSingle(exercise, settingsRepo.current())
+    }
 
     /** Run the whole workout starting from the given exercise to the end of the list. */
     fun startWorkoutFrom(exercise: Exercise) {
+        if (isSessionActive) return
         val all = exercises.value
         val start = all.indexOfFirst { it.id == exercise.id }
         if (start < 0) return
+        _timerMinimized.value = false
         RestTimerController.startSession(all.subList(start, all.size), settingsRepo.current())
     }
 
     fun startRest(actualReps: Int) = RestTimerController.startRest(actualReps)
     fun addRestSeconds(extra: Int) = RestTimerController.addSeconds(extra)
     fun skipRest() = RestTimerController.skip()
-    fun cancelTimer() = RestTimerController.cancel()
+
+    fun cancelTimer() {
+        RestTimerController.cancel()
+        _timerMinimized.value = false
+    }
 
     fun deleteReport(id: Long) = reportRepo.delete(id)
 }

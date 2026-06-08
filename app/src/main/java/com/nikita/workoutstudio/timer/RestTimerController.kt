@@ -100,7 +100,18 @@ object RestTimerController {
         AlarmPlayer.stop()
         RestNotifications.cancelAlarm(appContext)
         logSet(actualReps)
-        beginCountdown(_state.value.restSeconds)
+        val s = _state.value
+        // After the very last set of the whole session there is nothing to rest for:
+        // skip the countdown (and its alarm) entirely and finish straight away.
+        if (s.currentSet >= s.totalSets && index >= queue.size - 1) {
+            cancelTick()
+            stopService()
+            RestNotifications.cancelOngoing(appContext)
+            saveReport()
+            _state.value = s.copy(phase = Phase.DONE, remainingSeconds = 0)
+        } else {
+            beginCountdown(s.restSeconds)
+        }
     }
 
     fun addSeconds(extra: Int) {

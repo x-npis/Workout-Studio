@@ -1,5 +1,6 @@
 package com.nikita.workoutstudio.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,18 +44,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nikita.workoutstudio.model.Exercise
+import com.nikita.workoutstudio.timer.RestTimerController
 import com.nikita.workoutstudio.ui.AppViewModel
 import com.nikita.workoutstudio.ui.theme.SoftCard
 
 @Composable
 fun ExercisesScreen(vm: AppViewModel, modifier: Modifier = Modifier) {
     val exercises by vm.exercises.collectAsState()
+    val timerState by vm.timerState.collectAsState()
+    val sessionActive = timerState.phase != RestTimerController.Phase.IDLE
+    val context = LocalContext.current
     var editing by remember { mutableStateOf<Exercise?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var reorderMode by remember { mutableStateOf(false) }
@@ -83,6 +89,15 @@ fun ExercisesScreen(vm: AppViewModel, modifier: Modifier = Modifier) {
                 }
             }
 
+            if (sessionActive) {
+                Text(
+                    "Идёт тренировка. Правки применятся со следующего запуска.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+                )
+            }
+
             if (exercises.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -103,9 +118,16 @@ fun ExercisesScreen(vm: AppViewModel, modifier: Modifier = Modifier) {
                             canMoveUp = pos > 0,
                             canMoveDown = pos < exercises.size - 1,
                             onClick = {
-                                // Last exercise: "whole workout from here" == single, so just start it.
-                                if (pos >= 0 && pos == exercises.size - 1) vm.startSingle(ex)
-                                else startChooserFor = ex
+                                when {
+                                    sessionActive -> Toast.makeText(
+                                        context,
+                                        "Тренировка уже идёт — сначала заверши её",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    // Last exercise: "whole workout from here" == single, so just start it.
+                                    pos >= 0 && pos == exercises.size - 1 -> vm.startSingle(ex)
+                                    else -> startChooserFor = ex
+                                }
                             },
                             onEdit = { editing = ex; showEditor = true },
                             onDuplicate = { vm.duplicateExercise(ex.id) },
