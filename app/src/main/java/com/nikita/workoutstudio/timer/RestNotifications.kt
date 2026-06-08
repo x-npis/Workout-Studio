@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.nikita.workoutstudio.AlarmActivity
 import com.nikita.workoutstudio.MainActivity
 import com.nikita.workoutstudio.R
 
@@ -74,6 +75,18 @@ object RestNotifications {
         )
     }
 
+    private fun fullScreenIntent(context: Context, title: String, text: String): PendingIntent {
+        val intent = Intent(context, AlarmActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(AlarmActivity.EXTRA_TITLE, title)
+            putExtra(AlarmActivity.EXTRA_TEXT, text)
+        }
+        return PendingIntent.getActivity(
+            context, 2, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     fun buildOngoing(context: Context, exerciseName: String, remaining: Int, set: Int, total: Int): Notification {
         ensureChannels(context)
         val mm = remaining / 60
@@ -102,13 +115,16 @@ object RestNotifications {
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(title)
             .setContentText(text)
-            .setAutoCancel(true)
+            // Stays in the shade until the user acts on it (no auto-dismiss).
+            .setAutoCancel(false)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // Tapping the notification opens the app; the full-screen intent
+            // launches the AlarmActivity panel over the lock screen.
             .setContentIntent(contentIntent(context))
-            .setFullScreenIntent(contentIntent(context), true)
+            .setFullScreenIntent(fullScreenIntent(context, title, text), true)
             .addAction(0, "Остановить", stopAlarmIntent(context))
             .build()
         manager.notify(ALARM_ID, notification)

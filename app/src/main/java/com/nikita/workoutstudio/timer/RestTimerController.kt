@@ -190,7 +190,12 @@ object RestTimerController {
         stopService()
         RestNotifications.cancelOngoing(appContext)
         // Alarm-stream sound + vibration: rings even when the phone is on mute.
-        AlarmPlayer.start(appContext, sound = settings.sound, vibrate = settings.vibrate)
+        AlarmPlayer.start(
+            appContext,
+            sound = settings.sound,
+            vibrate = settings.vibrate,
+            soundUri = settings.alarmSoundUri
+        )
         val (title, text) = doneMessage()
         // Alarm-style panel so it surfaces over other apps / the lock screen.
         if (settings.runInBackground) {

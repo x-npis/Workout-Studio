@@ -1,5 +1,6 @@
 package com.nikita.workoutstudio.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -143,6 +145,9 @@ private fun ReportDetail(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
 
+    // System back returns to the report list instead of leaving the app.
+    BackHandler { onBack() }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -218,7 +223,11 @@ private fun ExerciseReportCard(ex: ExerciseReport) {
         )
         Spacer(Modifier.height(10.dp))
         ex.sets.forEachIndexed { i, set ->
-            val below = set.actualReps < set.targetReps
+            val repColor = when {
+                set.actualReps < set.targetReps -> MaterialTheme.colorScheme.error
+                set.actualReps > set.targetReps -> SuccessGreen
+                else -> MaterialTheme.colorScheme.onSurface
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -233,8 +242,7 @@ private fun ExerciseReportCard(ex: ExerciseReport) {
                     "${set.actualReps} / ${set.targetReps}",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (below) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurface
+                    color = repColor
                 )
             }
         }
@@ -257,6 +265,9 @@ private fun SummaryRow(label: String, value: String, last: Boolean = false) {
 
 private val dateTimeFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
 private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+// Reads well on both the light and dark frosted cards.
+private val SuccessGreen = Color(0xFF34A853)
 
 private fun formatDateTime(millis: Long): String = dateTimeFormat.format(Date(millis))
 private fun formatTime(millis: Long): String = timeFormat.format(Date(millis))

@@ -2,7 +2,6 @@ package com.nikita.workoutstudio.timer
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
@@ -23,16 +22,16 @@ import kotlinx.coroutines.launch
  */
 object AlarmPlayer {
 
-    private const val AUTO_STOP_MS = 30_000L
+    private const val AUTO_STOP_MS = 60_000L
 
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private val scope = CoroutineScope(Dispatchers.Main.immediate)
     private var autoStopJob: Job? = null
 
-    fun start(context: Context, sound: Boolean, vibrate: Boolean) {
+    fun start(context: Context, sound: Boolean, vibrate: Boolean, soundUri: String? = null) {
         stop()
-        if (sound) startSound(context)
+        if (sound) startSound(context, soundUri)
         if (vibrate) startVibration(context)
         if (sound || vibrate) {
             autoStopJob = scope.launch {
@@ -58,11 +57,20 @@ object AlarmPlayer {
         vibrator = null
     }
 
-    private fun startSound(context: Context) {
-        val uri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+    private fun startSound(context: Context, soundUri: String?) {
+        val uri: Uri = soundUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
             ?: return
-        try {
+        if (!tryPlay(context, uri)) {
+            // Chosen sound failed (e.g. deleted) — fall back to the default alarm.
+            val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            if (fallback != null && fallback != uri) tryPlay(context, fallback)
+        }
+    }
+
+    private fun tryPlay(context: Context, uri: Uri): Boolean {
+        return try {
             player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -75,9 +83,10 @@ object AlarmPlayer {
                 setOnPreparedListener { it.start() }
                 prepareAsync()
             }
+            true
         } catch (e: Exception) {
-            // Fallback: a one-shot ringtone is better than a crash.
             player = null
+            false
         }
     }
 

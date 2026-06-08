@@ -1,5 +1,6 @@
 package com.nikita.workoutstudio.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -36,6 +37,8 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
 
     // When a timer session is active, show it full-screen above the tabs.
     if (timerState.phase != RestTimerController.Phase.IDLE) {
+        // System back closes the timer, same as the on-screen close button.
+        BackHandler { vm.cancelTimer() }
         TimerScreen(vm = vm, state = timerState, onClose = { vm.cancelTimer() })
         return
     }
