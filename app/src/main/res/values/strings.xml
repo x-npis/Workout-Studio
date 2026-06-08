@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Workout Studio</string>
+    <string name="rest_channel_name">Таймер отдыха</string>
+    <string name="rest_channel_desc">Отсчёт времени отдыха между подходами</string>
+</resources>
