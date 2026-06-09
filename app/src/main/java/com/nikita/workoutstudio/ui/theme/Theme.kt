@@ -10,6 +10,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import com.nikita.workoutstudio.model.ThemeMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -64,6 +65,14 @@ private val AppShapes = Shapes(
     large = RoundedCornerShape(28.dp),
     extraLarge = RoundedCornerShape(36.dp)
 )
+
+/** Resolve a stored theme-mode string into an effective dark/light flag. */
+@Composable
+fun resolveDarkTheme(themeMode: String): Boolean = when (themeMode) {
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+    else -> isSystemInDarkTheme()
+}
 
 @Composable
 fun WorkoutStudioTheme(

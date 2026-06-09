@@ -42,6 +42,15 @@ class ReportRepository(context: Context) {
         persist(_reports.value.filterNot { it.id == id })
     }
 
+    fun deleteMany(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        persist(_reports.value.filterNot { it.id in ids })
+    }
+
+    fun deleteAll() {
+        persist(emptyList())
+    }
+
     companion object {
         private const val KEY = "report_list"
         private const val MAX_REPORTS = 500

@@ -81,4 +81,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteReport(id: Long) = reportRepo.delete(id)
+    fun deleteReports(ids: Set<Long>) = reportRepo.deleteMany(ids)
+    fun deleteAllReports() = reportRepo.deleteAll()
+
+    fun reportsByIds(ids: Set<Long>): List<com.nikita.workoutstudio.model.WorkoutReport> =
+        reports.value.filter { it.id in ids }
+
+    fun allReports(): List<com.nikita.workoutstudio.model.WorkoutReport> = reports.value
 }

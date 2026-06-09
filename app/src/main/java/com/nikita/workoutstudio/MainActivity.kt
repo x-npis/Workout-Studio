@@ -8,10 +8,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.nikita.workoutstudio.timer.RestTimerController
 import com.nikita.workoutstudio.ui.AppRoot
 import com.nikita.workoutstudio.ui.theme.WorkoutStudioTheme
+import com.nikita.workoutstudio.ui.theme.resolveDarkTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -22,8 +25,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         maybeRequestNotificationPermission()
+        val settingsFlow = (application as WorkoutApp).settingsRepository.settings
         setContent {
-            WorkoutStudioTheme {
+            val settings by settingsFlow.collectAsState()
+            WorkoutStudioTheme(darkTheme = resolveDarkTheme(settings.themeMode)) {
                 AppRoot()
             }
         }
