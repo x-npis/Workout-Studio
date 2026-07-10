@@ -9,6 +9,13 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/**
+ * Persists timer settings in SharedPreferences. These survive an in-place app
+ * update (same applicationId + signing key), so users keep their preferences
+ * when installing a newer build over an existing one. `ignoreUnknownKeys` keeps
+ * old JSON readable after new fields are added; a parse failure falls back to
+ * defaults rather than crashing. Only a full uninstall clears the data.
+ */
 class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)

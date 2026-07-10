@@ -15,7 +15,11 @@ import com.nikita.workoutstudio.R
 object RestNotifications {
 
     const val CHANNEL_ID = "rest_timer"
-    const val ALARM_CHANNEL_ID = "rest_alarm"
+    // Bumped to _v2 because notification channels are immutable once created:
+    // older installs already had "rest_alarm" with different settings, so a new
+    // id is required for the high-importance heads-up behaviour to take effect.
+    const val ALARM_CHANNEL_ID = "rest_alarm_v2"
+    private const val LEGACY_ALARM_CHANNEL_ID = "rest_alarm"
     const val ONGOING_ID = 1001
     const val ALARM_ID = 1003
 
@@ -34,6 +38,11 @@ object RestNotifications {
                 setSound(null, null)
             }
             manager.createNotificationChannel(ongoing)
+        }
+
+        // Drop the stale v1 channel so it doesn't linger in system settings.
+        if (manager.getNotificationChannel(LEGACY_ALARM_CHANNEL_ID) != null) {
+            manager.deleteNotificationChannel(LEGACY_ALARM_CHANNEL_ID)
         }
 
         if (manager.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
@@ -75,6 +84,10 @@ object RestNotifications {
         )
     }
 
+    // Kept for a future full-screen (over-the-lock-screen) alarm mode. The
+    // heads-up notification below no longer wires this up, so AlarmActivity is
+    // currently launched only if this is reattached to a notification.
+    @Suppress("unused")
     private fun fullScreenIntent(context: Context, title: String, text: String): PendingIntent {
         val intent = Intent(context, AlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -105,8 +118,10 @@ object RestNotifications {
     }
 
     /**
-     * Alarm-style heads-up / full-screen notification shown when rest ends.
-     * Tapping it opens the app; the Stop action silences the AlarmPlayer.
+     * Alarm-style heads-up notification shown when rest ends. Behaves like the
+     * system clock's timer alert: pops as a heads-up card, stays pinned in the
+     * shade (can't be swiped away), and carries a single Dismiss action.
+     * Tapping the body opens the app; Dismiss silences the AlarmPlayer.
      */
     fun showAlarm(context: Context, title: String, text: String) {
         ensureChannels(context)
@@ -115,17 +130,18 @@ object RestNotifications {
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(title)
             .setContentText(text)
-            // Stays in the shade until the user acts on it (no auto-dismiss).
+            // Stays in the shade until the user acts on it (no auto-dismiss,
+            // not swipe-dismissable) — just like an alarm/timer alert.
             .setAutoCancel(false)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            // Tapping the notification opens the app; the full-screen intent
-            // launches the AlarmActivity panel over the lock screen.
+            // Tapping the notification body opens the app (MainActivity.onResume
+            // silences the alarm). No full-screen intent: we deliberately want a
+            // plain heads-up card, not an over-the-lock-screen panel.
             .setContentIntent(contentIntent(context))
-            .setFullScreenIntent(fullScreenIntent(context, title, text), true)
-            .addAction(0, "Остановить", stopAlarmIntent(context))
+            .addAction(0, "Dismiss", stopAlarmIntent(context))
             .build()
         manager.notify(ALARM_ID, notification)
     }

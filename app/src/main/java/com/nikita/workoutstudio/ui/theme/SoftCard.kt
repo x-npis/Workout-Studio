@@ -34,9 +34,13 @@ fun SoftCard(
             scheme.surface.copy(alpha = 0.95f)
         )
     )
+    // clip() first, then the caller's modifier: a combinedClickable passed in
+    // via `modifier` renders its ripple *after* the clip, so the touch highlight
+    // is bounded by the rounded corners instead of leaking out as a rectangle.
     Box(
-        modifier = modifier
+        modifier = Modifier
             .clip(shape)
+            .then(modifier)
             .background(gradient)
             .border(1.dp, scheme.outline.copy(alpha = 0.6f), shape)
     ) {

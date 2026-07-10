@@ -9,6 +9,13 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/**
+ * Persists workout reports in SharedPreferences. Like settings, these survive an
+ * in-place app update (same applicationId + signing key), so history carries over
+ * when installing a newer build over an existing one. `ignoreUnknownKeys` lets
+ * old JSON stay readable after new fields are added to the report models. Only a
+ * full uninstall clears the data.
+ */
 class ReportRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("reports", Context.MODE_PRIVATE)
