@@ -18,6 +18,25 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // Release signing driven by environment variables so the CI can inject a
+    // persistent keystore from GitHub Secrets. Every build then carries the SAME
+    // signature, which is what lets users install a new version over an existing
+    // one (updating in place) without "package conflict" / data loss. When the
+    // env vars are absent (e.g. a local build without the keystore) we skip the
+    // config and Gradle falls back to unsigned/debug so the build still succeeds.
+    val keystorePath = System.getenv("KEYSTORE_FILE")
+    val hasReleaseKeystore = keystorePath != null && file(keystorePath).exists()
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -25,6 +44,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Use the persistent release key when available; otherwise leave the
+            // default so `assembleRelease` doesn't fail locally without secrets.
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

@@ -15,11 +15,13 @@ import com.nikita.workoutstudio.R
 object RestNotifications {
 
     const val CHANNEL_ID = "rest_timer"
-    // Bumped to _v2 because notification channels are immutable once created:
-    // older installs already had "rest_alarm" with different settings, so a new
-    // id is required for the high-importance heads-up behaviour to take effect.
-    const val ALARM_CHANNEL_ID = "rest_alarm_v2"
-    private const val LEGACY_ALARM_CHANNEL_ID = "rest_alarm"
+    // Bumped whenever the alarm channel's settings change: notification channels
+    // are immutable once created, so a new id is the only way to apply changes on
+    // installs that already created an earlier version. v3 enables channel
+    // vibration, which One UI (and stock Android) treat as a signal to actually
+    // pop the notification as heads-up instead of a silent shade entry.
+    const val ALARM_CHANNEL_ID = "rest_alarm_v3"
+    private val LEGACY_ALARM_CHANNEL_IDS = listOf("rest_alarm", "rest_alarm_v2")
     const val ONGOING_ID = 1001
     const val ALARM_ID = 1003
 
@@ -40,22 +42,27 @@ object RestNotifications {
             manager.createNotificationChannel(ongoing)
         }
 
-        // Drop the stale v1 channel so it doesn't linger in system settings.
-        if (manager.getNotificationChannel(LEGACY_ALARM_CHANNEL_ID) != null) {
-            manager.deleteNotificationChannel(LEGACY_ALARM_CHANNEL_ID)
+        // Drop stale earlier alarm channels so they don't linger in settings.
+        LEGACY_ALARM_CHANNEL_IDS.forEach { legacy ->
+            if (manager.getNotificationChannel(legacy) != null) {
+                manager.deleteNotificationChannel(legacy)
+            }
         }
 
         if (manager.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
-            // No channel sound/vibration here: AlarmPlayer owns the alarm-stream
-            // audio so it works even in mute mode. Channel stays silent to avoid
-            // a doubled notification beep.
+            // Channel is silent (no sound): AlarmPlayer owns the alarm-stream audio
+            // so it rings even in mute mode, and we avoid a doubled beep. We DO
+            // enable channel vibration though — it's the reliable signal that makes
+            // One UI / Android surface this as a heads-up pop rather than a quiet
+            // shade entry. The buzz here is separate from AlarmPlayer's own loop.
             val alarm = NotificationChannel(
                 ALARM_CHANNEL_ID,
                 context.getString(R.string.alarm_channel_name),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = context.getString(R.string.alarm_channel_desc)
-                enableVibration(false)
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 250, 200, 250)
                 setSound(null, null)
                 setBypassDnd(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
@@ -84,10 +91,11 @@ object RestNotifications {
         )
     }
 
-    // Kept for a future full-screen (over-the-lock-screen) alarm mode. The
-    // heads-up notification below no longer wires this up, so AlarmActivity is
-    // currently launched only if this is reattached to a notification.
-    @Suppress("unused")
+    // Used as a heads-up hint in showAlarm(): on Android 14+ without the
+    // USE_FULL_SCREEN_INTENT grant this does NOT open AlarmActivity, it just
+    // nudges the system into showing a proper heads-up pop. If a future build
+    // requests that permission, this same intent brings back the over-the-lock
+    // full-screen panel for free.
     private fun fullScreenIntent(context: Context, title: String, text: String): PendingIntent {
         val intent = Intent(context, AlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -119,9 +127,16 @@ object RestNotifications {
 
     /**
      * Alarm-style heads-up notification shown when rest ends. Behaves like the
-     * system clock's timer alert: pops as a heads-up card, stays pinned in the
-     * shade (can't be swiped away), and carries a single Dismiss action.
-     * Tapping the body opens the app; Dismiss silences the AlarmPlayer.
+     * system clock's timer alert: pops as a heads-up card and carries a single
+     * Dismiss action. Tapping the body opens the app; Dismiss silences the
+     * AlarmPlayer.
+     *
+     * Why NOT setOngoing(true): One UI (and Android in general) demote ongoing
+     * notifications to a quiet, non-popping shade entry — that was the "thin"
+     * behaviour we saw. To reliably pop as heads-up we drop ongoing and instead
+     * rely on IMPORTANCE_HIGH + CATEGORY_ALARM + a fullScreenIntent hint (which,
+     * without the USE_FULL_SCREEN_INTENT grant, degrades to a strong heads-up
+     * rather than opening a window) + channel vibration.
      */
     fun showAlarm(context: Context, title: String, text: String) {
         ensureChannels(context)
@@ -130,17 +145,20 @@ object RestNotifications {
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(title)
             .setContentText(text)
-            // Stays in the shade until the user acts on it (no auto-dismiss,
-            // not swipe-dismissable) — just like an alarm/timer alert.
+            // Don't auto-dismiss on tap; not ongoing (see kdoc) so it can pop.
             .setAutoCancel(false)
-            .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            // Tapping the notification body opens the app (MainActivity.onResume
-            // silences the alarm). No full-screen intent: we deliberately want a
-            // plain heads-up card, not an over-the-lock-screen panel.
+            // Vibrate hint on the notification too — another heads-up trigger.
+            .setVibrate(longArrayOf(0, 250, 200, 250))
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+            // Tapping the body opens the app (MainActivity.onResume silences the
+            // alarm). The fullScreenIntent is a heads-up hint: on Android 14+
+            // without the special grant it does NOT open the panel, it just makes
+            // the system surface a proper heads-up pop.
             .setContentIntent(contentIntent(context))
+            .setFullScreenIntent(fullScreenIntent(context, title, text), true)
             .addAction(0, "Dismiss", stopAlarmIntent(context))
             .build()
         manager.notify(ALARM_ID, notification)

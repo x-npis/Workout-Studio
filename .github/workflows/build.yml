@@ -27,10 +27,46 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      # Decode the persistent keystore (stored as a base64 GitHub Secret) to a
+      # file. Every release build is signed with this same key, so users can
+      # update in place instead of hitting a "package conflict" and losing data.
+      # If the secret is missing (e.g. a fork), we fall back to a debug build.
+      - name: Decode keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No KEYSTORE_BASE64 secret set — will build a debug APK."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed release APK
+        if: steps.keystore.outputs.present == 'true'
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Build debug APK (no signing secrets)
+        if: steps.keystore.outputs.present != 'true'
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload release APK
+        if: steps.keystore.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workout-studio-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload debug APK
+        if: steps.keystore.outputs.present != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: workout-studio-debug-apk

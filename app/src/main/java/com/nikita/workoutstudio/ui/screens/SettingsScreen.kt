@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -282,8 +284,10 @@ private fun androidx.compose.foundation.layout.RowScope.ThemeChip(
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         modifier = Modifier
             .weight(1f)
+            // clip first: keeps the ripple inside the rounded chip.
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
             .clickable(onClick = onClick)
-            .background(bg, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
             .padding(vertical = 12.dp)
     )
 }
@@ -327,7 +331,11 @@ private fun ExportDialog(
 @Composable
 private fun FormatOption(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         androidx.compose.material3.RadioButton(selected = selected, onClick = onClick)
@@ -392,6 +400,9 @@ private fun ActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // clip before clickable so the press ripple is bounded by rounded
+            // corners instead of leaking past the SoftCard edges.
+            .clip(RoundedCornerShape(16.dp))
             .let { if (enabled) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
