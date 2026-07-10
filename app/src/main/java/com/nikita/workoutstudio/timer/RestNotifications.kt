@@ -145,6 +145,10 @@ object RestNotifications {
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(title)
             .setContentText(text)
+            // BigTextStyle makes the notification render EXPANDED by default, so
+            // the Dismiss action is visible immediately without the user having to
+            // pull the card open.
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             // Don't auto-dismiss on tap; not ongoing (see kdoc) so it can pop.
             .setAutoCancel(false)
             .setCategory(NotificationCompat.CATEGORY_ALARM)

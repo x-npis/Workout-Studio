@@ -62,6 +62,7 @@ fun TimerScreen(
     }
 
     var confirmFinish by remember { mutableStateOf(false) }
+    var confirmRewind by remember { mutableStateOf(false) }
 
     val scheme = MaterialTheme.colorScheme
     Column(
@@ -107,11 +108,12 @@ fun TimerScreen(
         SetDots(current = state.currentSet, total = state.totalSets)
         Spacer(Modifier.weight(1f))
 
-        when (state.phase) {
-            RestTimerController.Phase.DONE -> DoneContent(
+        when {
+            state.phase == RestTimerController.Phase.DONE -> DoneContent(
                 textColor = scheme.onBackground,
                 wholeWorkout = state.exerciseCount > 1
             )
+            state.browsing -> BrowseContent(state = state)
             else -> CountdownContent(state = state)
         }
 
@@ -135,6 +137,7 @@ fun TimerScreen(
             vm = vm,
             state = state,
             onRequestFinish = { confirmFinish = true },
+            onRequestRewind = { confirmRewind = true },
             onFinish = onFinish
         )
     }
@@ -152,6 +155,28 @@ fun TimerScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmFinish = false }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (confirmRewind) {
+        AlertDialog(
+            onDismissRequest = { confirmRewind = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Перемотать сюда?") },
+            text = {
+                Text(
+                    "Тренировка продолжится с этого подхода. " +
+                        "Все результаты, записанные после него, будут удалены."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmRewind = false; vm.rewindHere() }) {
+                    Text("Перемотать", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRewind = false }) { Text("Отмена") }
             }
         )
     }
@@ -243,10 +268,43 @@ private fun DoneContent(textColor: Color, wholeWorkout: Boolean) {
 }
 
 @Composable
+private fun BrowseContent(state: RestTimerController.State) {
+    val scheme = MaterialTheme.colorScheme
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "Просмотр выполненного",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = scheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Подход ${state.currentSet}/${state.totalSets}",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.onBackground
+        )
+        Spacer(Modifier.height(28.dp))
+        Text(
+            "${state.loggedReps}",
+            fontSize = 72.sp,
+            fontWeight = FontWeight.Bold,
+            color = scheme.primary
+        )
+        Text(
+            "записано повторений · цель ${state.reps}",
+            fontSize = 14.sp,
+            color = scheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun Controls(
     vm: AppViewModel,
     state: RestTimerController.State,
     onRequestFinish: () -> Unit,
+    onRequestRewind: () -> Unit,
     onFinish: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -254,7 +312,8 @@ private fun Controls(
         RestTimerController.Phase.READY -> ReadyControls(
             vm = vm,
             state = state,
-            onRequestFinish = onRequestFinish
+            onRequestFinish = onRequestFinish,
+            onRequestRewind = onRequestRewind
         )
         RestTimerController.Phase.RESTING -> {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -295,17 +354,41 @@ private fun Controls(
 private fun ReadyControls(
     vm: AppViewModel,
     state: RestTimerController.State,
-    onRequestFinish: () -> Unit
+    onRequestFinish: () -> Unit,
+    onRequestRewind: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val browsing = state.browsing
     // Default the rep count to the planned target; the user nudges it if they did fewer/more.
-    var actual by remember(state.exerciseName, state.currentSet) { mutableStateOf(state.reps) }
+    var actual by remember(state.exerciseName, state.currentSet, browsing) { mutableStateOf(state.reps) }
     // The last set of the last exercise has no rest afterwards — finish instead.
     val isFinalSet = state.currentSet >= state.totalSets && state.exerciseIndex >= state.exerciseCount
+    // While browsing we show/edit the recorded reps; otherwise a draft for the upcoming set.
+    val repValue = if (browsing) state.loggedReps else actual
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Step through completed sets to review or fix them.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = { vm.browseBack() },
+                enabled = state.canGoBack,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) { Text("← Назад", fontSize = 15.sp) }
+            if (browsing) {
+                OutlinedButton(
+                    onClick = { vm.browseForward() },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) { Text("Вперёд →", fontSize = 15.sp) }
+            }
+        }
+
         Text(
-            "Сколько повторений сделал?",
+            if (browsing) "Изменить записанные повторения" else "Сколько повторений сделал?",
             fontSize = 14.sp,
             color = scheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -316,13 +399,16 @@ private fun ReadyControls(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StepperButton("–", onClick = { if (actual > 0) actual-- })
+            StepperButton("–", onClick = {
+                if (browsing) { if (repValue > 0) vm.editBrowsedReps(repValue - 1) }
+                else { if (actual > 0) actual-- }
+            })
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "$actual",
+                    "$repValue",
                     fontSize = 40.sp,
                     fontWeight = FontWeight.Bold,
                     color = scheme.onBackground
@@ -333,10 +419,13 @@ private fun ReadyControls(
                     color = scheme.onSurfaceVariant
                 )
             }
-            StepperButton("+", onClick = { actual++ })
+            StepperButton("+", onClick = {
+                if (browsing) vm.editBrowsedReps(repValue + 1)
+                else actual++
+            })
         }
         Button(
-            onClick = { vm.startRest(actual) },
+            onClick = { if (browsing) onRequestRewind() else vm.startRest(actual) },
             modifier = Modifier.fillMaxWidth().height(64.dp),
             shape = RoundedCornerShape(20.dp),
             colors = ButtonDefaults.buttonColors(
@@ -345,14 +434,18 @@ private fun ReadyControls(
             )
         ) {
             Text(
-                if (isFinalSet) "Завершить тренировку" else "Готово — начать отдых",
+                when {
+                    browsing -> "Перемотать сюда"
+                    isFinalSet -> "Завершить тренировку"
+                    else -> "Готово — начать отдых"
+                },
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
         // On the final set the big button already ends the workout, so the
         // separate "finish early" action only makes sense before then.
-        if (!isFinalSet) {
+        if (!isFinalSet && !browsing) {
             TextButton(
                 onClick = onRequestFinish,
                 modifier = Modifier.fillMaxWidth()

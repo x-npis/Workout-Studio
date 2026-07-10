@@ -75,6 +75,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun addRestSeconds(extra: Int) = RestTimerController.addSeconds(extra)
     fun skipRest() = RestTimerController.skip()
 
+    // Reviewing / rewinding to earlier sets during an active session.
+    fun browseBack() = RestTimerController.browseBack()
+    fun browseForward() = RestTimerController.browseForward()
+    fun editBrowsedReps(reps: Int) = RestTimerController.editBrowsedReps(reps)
+    fun rewindHere() = RestTimerController.rewindHere()
+
     fun cancelTimer() {
         RestTimerController.cancel()
         _timerMinimized.value = false

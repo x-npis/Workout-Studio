@@ -36,7 +36,14 @@ object RestTimerController {
         val exerciseIndex: Int = 1,
         val exerciseCount: Int = 1,
         // Name of the exercise that comes after the current one finishes, if any.
-        val nextExerciseName: String? = null
+        val nextExerciseName: String? = null,
+        // True while the user is reviewing an already-completed set (not the live frontier).
+        val browsing: Boolean = false,
+        // Reps recorded for the set being reviewed (only meaningful while browsing).
+        val loggedReps: Int = 0,
+        // Whether the back/forward review buttons should be enabled.
+        val canGoBack: Boolean = false,
+        val canGoForward: Boolean = false
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -55,6 +62,12 @@ object RestTimerController {
     private var sessionStartedAt: Long = 0L
     private val setLog = mutableMapOf<Int, MutableList<SetEntry>>()
     private var reportSaved = false
+
+    // Review cursor: index into completedPositions() while the user is browsing
+    // already-finished sets; -1 means we're on the live frontier (not browsing).
+    private var browseCursor: Int = -1
+    // The live frontier state stashed while browsing, restored when we step back to it.
+    private var savedFrontier: State? = null
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -86,6 +99,8 @@ object RestTimerController {
         queue = exercises
         index = 0
         setLog.clear()
+        browseCursor = -1
+        savedFrontier = null
         sessionStartedAt = System.currentTimeMillis()
         reportSaved = false
         emitReady(firstSet = true)
@@ -96,7 +111,7 @@ object RestTimerController {
      * start the rest countdown.
      */
     fun startRest(actualReps: Int) {
-        if (_state.value.phase != Phase.READY) return
+        if (_state.value.phase != Phase.READY || _state.value.browsing) return
         AlarmPlayer.stop()
         RestNotifications.cancelAlarm(appContext)
         logSet(actualReps)
@@ -147,7 +162,131 @@ object RestTimerController {
         queue = emptyList()
         index = 0
         setLog.clear()
+        browseCursor = -1
+        savedFrontier = null
         _state.value = State(phase = Phase.IDLE)
+    }
+
+    // ---- Reviewing already-completed sets -----------------------------------
+
+    /**
+     * All finished sets in chronological order as (exerciseIndex, setNumber) pairs.
+     * The live frontier sits right after the last entry.
+     */
+    private fun completedPositions(): List<Pair<Int, Int>> {
+        val result = mutableListOf<Pair<Int, Int>>()
+        for (exIdx in 0..index) {
+            val done = setLog[exIdx]?.size ?: 0
+            for (setNo in 1..done) result.add(exIdx to setNo)
+        }
+        return result
+    }
+
+    /** Step one completed set backwards (entering review mode on the first press). */
+    fun browseBack() {
+        if (_state.value.phase != Phase.READY) return
+        val positions = completedPositions()
+        if (positions.isEmpty()) return
+        when {
+            browseCursor < 0 -> {
+                savedFrontier = _state.value
+                browseCursor = positions.size - 1
+            }
+            browseCursor > 0 -> browseCursor -= 1
+            else -> return
+        }
+        emitBrowse(positions)
+    }
+
+    /** Step one completed set forward; stepping past the last returns to the live frontier. */
+    fun browseForward() {
+        if (browseCursor < 0) return
+        val positions = completedPositions()
+        if (browseCursor >= positions.size - 1) {
+            exitBrowse()
+        } else {
+            browseCursor += 1
+            emitBrowse(positions)
+        }
+    }
+
+    /** Overwrite the recorded reps of the set currently under review. */
+    fun editBrowsedReps(reps: Int) {
+        if (!_state.value.browsing || browseCursor < 0) return
+        val positions = completedPositions()
+        val (exIdx, setNo) = positions.getOrNull(browseCursor) ?: return
+        val list = setLog[exIdx] ?: return
+        val entry = list.getOrNull(setNo - 1) ?: return
+        val fixed = reps.coerceAtLeast(0)
+        list[setNo - 1] = entry.copy(actualReps = fixed)
+        _state.value = _state.value.copy(loggedReps = fixed)
+    }
+
+    /**
+     * Rewind the live session to the set under review: everything recorded at and
+     * after this point is erased, and the workout continues by redoing this set.
+     */
+    fun rewindHere() {
+        if (!_state.value.browsing || browseCursor < 0) return
+        val positions = completedPositions()
+        val (exIdx, setNo) = positions.getOrNull(browseCursor) ?: return
+        // Drop this set's own entry and every later one across all exercises.
+        setLog[exIdx]?.let { list -> while (list.size >= setNo) list.removeAt(list.size - 1) }
+        setLog.keys.filter { it > exIdx }.forEach { setLog.remove(it) }
+        index = exIdx
+        browseCursor = -1
+        savedFrontier = null
+        reportSaved = false
+        val ex = queue[exIdx]
+        _state.value = State(
+            phase = Phase.READY,
+            exerciseName = ex.name,
+            reps = ex.reps,
+            currentSet = setNo,
+            totalSets = ex.sets.coerceAtLeast(1),
+            restSeconds = ex.restSeconds,
+            remainingSeconds = ex.restSeconds,
+            exerciseIndex = exIdx + 1,
+            exerciseCount = queue.size,
+            nextExerciseName = queue.getOrNull(exIdx + 1)?.name,
+            canGoBack = completedPositions().isNotEmpty()
+        )
+    }
+
+    private fun emitBrowse(positions: List<Pair<Int, Int>>) {
+        val (exIdx, setNo) = positions[browseCursor]
+        val ex = queue[exIdx]
+        val logged = setLog[exIdx]?.getOrNull(setNo - 1)?.actualReps ?: 0
+        _state.value = _state.value.copy(
+            phase = Phase.READY,
+            browsing = true,
+            exerciseName = ex.name,
+            reps = ex.reps,
+            currentSet = setNo,
+            totalSets = ex.sets.coerceAtLeast(1),
+            restSeconds = ex.restSeconds,
+            remainingSeconds = ex.restSeconds,
+            exerciseIndex = exIdx + 1,
+            exerciseCount = queue.size,
+            nextExerciseName = queue.getOrNull(exIdx + 1)?.name,
+            loggedReps = logged,
+            canGoBack = browseCursor > 0,
+            canGoForward = true
+        )
+    }
+
+    private fun exitBrowse() {
+        val frontier = savedFrontier
+        browseCursor = -1
+        savedFrontier = null
+        if (frontier != null) {
+            _state.value = frontier.copy(
+                browsing = false,
+                loggedReps = 0,
+                canGoBack = completedPositions().isNotEmpty(),
+                canGoForward = false
+            )
+        }
     }
 
     private fun logSet(actualReps: Int) {
@@ -170,7 +309,8 @@ object RestTimerController {
             remainingSeconds = current.restSeconds,
             exerciseIndex = index + 1,
             exerciseCount = queue.size,
-            nextExerciseName = queue.getOrNull(index + 1)?.name
+            nextExerciseName = queue.getOrNull(index + 1)?.name,
+            canGoBack = completedPositions().isNotEmpty()
         )
     }
 
@@ -239,7 +379,8 @@ object RestTimerController {
                 _state.value = s.copy(
                     phase = Phase.READY,
                     currentSet = s.currentSet + 1,
-                    remainingSeconds = s.restSeconds
+                    remainingSeconds = s.restSeconds,
+                    canGoBack = completedPositions().isNotEmpty()
                 )
             }
             // Move on to the next exercise in the chain.
